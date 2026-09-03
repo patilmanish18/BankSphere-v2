@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Environment
+.env
+.python-version
+
+# Data & logs (generated, not source)
+data/
+logs/
+*.log
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Airflow
+airflow/logs/
+airflow/airflow.db
