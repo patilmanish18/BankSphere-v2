@@ -3,19 +3,11 @@
 import random
 from faker import Faker
 from data_generator.config import RANDOM_SEED
+from data_generator.utils.location_data import INDIAN_STATES_CITIES
 
 fake = Faker("en_IN")
 Faker.seed(RANDOM_SEED)
 random.seed(RANDOM_SEED)
-
-INDIAN_STATES_CITIES = {
-    "Maharashtra": ["Mumbai", "Pune", "Nagpur", "Nashik"],
-    "Karnataka": ["Bengaluru", "Mysuru", "Hubli"],
-    "Delhi": ["New Delhi"],
-    "Tamil Nadu": ["Chennai", "Coimbatore"],
-    "Gujarat": ["Ahmedabad", "Surat"],
-    "West Bengal": ["Kolkata", "Howrah"],
-}
 
 
 def generate_branches(count: int) -> list[dict]:
