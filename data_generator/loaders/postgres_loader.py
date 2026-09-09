@@ -171,12 +171,48 @@ def load_cards(cards: list[dict], account_ids: list[int]) -> list[int]:
 
     return card_ids
 
+def load_loans(loans: list[dict], customer_ids: list[int], branch_ids: list[int]) -> list[int]:
+    """Inserts loans, translating each loan's `customer_index` and
+    `branch_index` into their real database IDs.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    loan_ids = []
+
+    try:
+        for l in loans:
+            real_customer_id = customer_ids[l["customer_index"]]
+            real_branch_id = branch_ids[l["branch_index"]]
+            cur.execute(
+                """
+                INSERT INTO loans
+                    (customer_id, branch_id, loan_type, principal_amount,
+                     interest_rate, tenure_months, emi_amount, status, disbursed_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING loan_id;
+                """,
+                (real_customer_id, real_branch_id, l["loan_type"],
+                 l["principal_amount"], l["interest_rate"], l["tenure_months"],
+                 l["emi_amount"], l["status"], l["disbursed_date"]),
+            )
+            loan_ids.append(cur.fetchone()[0])
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+    return loan_ids
+
 if __name__ == "__main__":
     from data_generator.generators.branch_generator import generate_branches
     from data_generator.generators.employee_generator import generate_employees
     from data_generator.generators.customer_generator import generate_customers
     from data_generator.generators.account_generator import generate_accounts
     from data_generator.generators.card_generator import generate_cards
+    from data_generator.generators.loan_generator import generate_loans
 
     branches = generate_branches(5)
     branch_ids = load_branches(branches)
@@ -196,21 +232,26 @@ if __name__ == "__main__":
 
     cards = generate_cards(accounts, 15)
     card_ids = load_cards(cards, account_ids)
-    print(f"Inserted {len(card_ids)} cards. IDs: {card_ids}")
+    print(f"Inserted {len(card_ids)} cards.")
+
+    loans = generate_loans(customers, branches, 6)
+    loan_ids = load_loans(loans, customer_ids, branch_ids)
+    print(f"Inserted {len(loan_ids)} loans. IDs: {loan_ids}")
 
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT k.card_id, k.card_type, k.credit_limit, a.account_number
-        FROM cards k
-        JOIN accounts a ON k.account_id = a.account_id
-        WHERE k.card_id = ANY(%s)
-        ORDER BY k.card_id;
+        SELECT lo.loan_id, lo.loan_type, lo.emi_amount, c.first_name, b.branch_name
+        FROM loans lo
+        JOIN customers c ON lo.customer_id = c.customer_id
+        JOIN branches b ON lo.branch_id = b.branch_id
+        WHERE lo.loan_id = ANY(%s)
+        ORDER BY lo.loan_id;
         """,
-        (card_ids,),
+        (loan_ids,),
     )
-    print("\nVerification — cards JOINed to real account:")
+    print("\nVerification — loans JOINed to real customer and branch:")
     for row in cur.fetchall():
         print(f"  {row}")
     cur.close()
