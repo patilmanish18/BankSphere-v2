@@ -69,9 +69,45 @@ def load_employees(employees: list[dict], branch_ids: list[int]) -> list[int]:
     return employee_ids
 
 
+def load_customers(customers: list[dict]) -> list[int]:
+    """Inserts customers, returns their real database customer_ids in the
+    SAME ORDER as the input list. No FK dependencies, same pattern as
+    load_branches.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    customer_ids = []
+
+    try:
+        for c in customers:
+            cur.execute(
+                """
+                INSERT INTO customers
+                    (first_name, last_name, dob, gender, email, phone, address,
+                     city, state, pincode, pan_number, kyc_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING customer_id;
+                """,
+                (c["first_name"], c["last_name"], c["dob"], c["gender"],
+                 c["email"], c["phone"], c["address"], c["city"], c["state"],
+                 c["pincode"], c["pan_number"], c["kyc_status"]),
+            )
+            customer_ids.append(cur.fetchone()[0])
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+    return customer_ids
+
+
 if __name__ == "__main__":
     from data_generator.generators.branch_generator import generate_branches
     from data_generator.generators.employee_generator import generate_employees
+    from data_generator.generators.customer_generator import generate_customers
 
     branches = generate_branches(5)
     branch_ids = load_branches(branches)
@@ -81,19 +117,17 @@ if __name__ == "__main__":
     employee_ids = load_employees(employees, branch_ids)
     print(f"Inserted {len(employee_ids)} employees. IDs: {employee_ids}")
 
+    customers = generate_customers(8)
+    customer_ids = load_customers(customers)
+    print(f"Inserted {len(customer_ids)} customers. IDs: {customer_ids}")
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        """
-        SELECT e.employee_id, e.first_name, e.branch_id, b.branch_name
-        FROM employees e
-        JOIN branches b ON e.branch_id = b.branch_id
-        WHERE e.employee_id = ANY(%s)
-        ORDER BY e.employee_id;
-        """,
-        (employee_ids,),
+        "SELECT customer_id, first_name, pan_number FROM customers WHERE customer_id = ANY(%s) ORDER BY customer_id;",
+        (customer_ids,),
     )
-    print("\nVerification — employees JOINed to their real branch:")
+    print("\nVerification — customers actually in the database:")
     for row in cur.fetchall():
         print(f"  {row}")
     cur.close()
