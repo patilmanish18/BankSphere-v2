@@ -103,31 +103,77 @@ def load_customers(customers: list[dict]) -> list[int]:
 
     return customer_ids
 
+def load_accounts(accounts: list[dict], customer_ids: list[int], branch_ids: list[int]) -> list[int]:
+    """Inserts accounts, translating each account's `customer_index` and
+    `branch_index` into their real database IDs.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    account_ids = []
+
+    try:
+        for a in accounts:
+            real_customer_id = customer_ids[a["customer_index"]]
+            real_branch_id = branch_ids[a["branch_index"]]
+            cur.execute(
+                """
+                INSERT INTO accounts
+                    (account_number, customer_id, branch_id, account_type,
+                     balance, currency, status, opened_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING account_id;
+                """,
+                (a["account_number"], real_customer_id, real_branch_id,
+                 a["account_type"], a["balance"], a["currency"],
+                 a["status"], a["opened_date"]),
+            )
+            account_ids.append(cur.fetchone()[0])
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+    return account_ids
 
 if __name__ == "__main__":
     from data_generator.generators.branch_generator import generate_branches
     from data_generator.generators.employee_generator import generate_employees
     from data_generator.generators.customer_generator import generate_customers
+    from data_generator.generators.account_generator import generate_accounts
 
     branches = generate_branches(5)
     branch_ids = load_branches(branches)
-    print(f"Inserted {len(branch_ids)} branches. IDs: {branch_ids}")
+    print(f"Inserted {len(branch_ids)} branches.")
 
     employees = generate_employees(branches, 10)
     employee_ids = load_employees(employees, branch_ids)
-    print(f"Inserted {len(employee_ids)} employees. IDs: {employee_ids}")
+    print(f"Inserted {len(employee_ids)} employees.")
 
     customers = generate_customers(8)
     customer_ids = load_customers(customers)
-    print(f"Inserted {len(customer_ids)} customers. IDs: {customer_ids}")
+    print(f"Inserted {len(customer_ids)} customers.")
+
+    accounts = generate_accounts(customers, branches, 12)
+    account_ids = load_accounts(accounts, customer_ids, branch_ids)
+    print(f"Inserted {len(account_ids)} accounts. IDs: {account_ids}")
 
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "SELECT customer_id, first_name, pan_number FROM customers WHERE customer_id = ANY(%s) ORDER BY customer_id;",
-        (customer_ids,),
+        """
+        SELECT a.account_id, a.account_number, c.first_name, b.branch_name
+        FROM accounts a
+        JOIN customers c ON a.customer_id = c.customer_id
+        JOIN branches b ON a.branch_id = b.branch_id
+        WHERE a.account_id = ANY(%s)
+        ORDER BY a.account_id;
+        """,
+        (account_ids,),
     )
-    print("\nVerification — customers actually in the database:")
+    print("\nVerification — accounts JOINed to real customer and branch:")
     for row in cur.fetchall():
         print(f"  {row}")
     cur.close()
