@@ -24,24 +24,30 @@ def parse_date_col(df: DataFrame, col_name: str) -> DataFrame:
     )
     return df.withColumn(col_name, parsed)
 
+def deduplicate_by_key(df: DataFrame, key_cols: list) -> DataFrame:
+    """Removes duplicate rows based on `key_cols`, keeping one row per
+    unique key combination. Uses dropDuplicates rather than a window
+    function here since our duplicates are exact copies (no "most
+    recent wins" data to actually choose between) — dropDuplicates is
+    simpler and sufficient for that case.
+    """
+    return df.dropDuplicates(subset=key_cols)
+
 
 if __name__ == "__main__":
     from pyspark_jobs.utils.spark_session import get_spark_session
     from pyspark_jobs.utils.schema_definitions import BRANCHES_SCHEMA
 
-    spark = get_spark_session("date-parser-test")
+    spark = get_spark_session("transformations-test")
     df = spark.read.csv("data/raw/branches.csv", header=True, schema=BRANCHES_SCHEMA)
 
-    print("BEFORE parsing (raw strings):")
-    df.select("branch_code", "opened_date").show(20, truncate=False)
+    print(f"Row count BEFORE dedup: {df.count()}")
 
-    parsed_df = parse_date_col(df, "opened_date")
+    deduped = deduplicate_by_key(df, ["branch_code"])
+    print(f"Row count AFTER dedup: {deduped.count()}")
 
-    print("AFTER parsing (should all be real dates or null):")
-    parsed_df.select("branch_code", "opened_date").show(20, truncate=False)
-
+    parsed_df = parse_date_col(deduped, "opened_date")
     null_count = parsed_df.filter(F.col("opened_date").isNull()).count()
-    total_count = parsed_df.count()
-    print(f"\nRows with unparseable opened_date: {null_count} out of {total_count}")
+    print(f"Rows with unparseable opened_date (post-dedup): {null_count}")
 
     spark.stop()
